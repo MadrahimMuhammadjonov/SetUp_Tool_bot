@@ -1,29 +1,25 @@
 import logging
 import sqlite3
 import asyncio
-import os
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
-from dotenv import load_dotenv
-
-load_dotenv()
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-TOKEN = os.getenv("BOT_TOKEN")
-SUPER_ADMIN_ID = int(os.getenv("SUPER_ADMIN_ID"))
+# ==================== SOZLAMALAR - BU YERGA O'Z MA'LUMOTLARINGIZNI KIRITING ====================
+TOKEN = "8332172370:AAHpj0H_6sss-bMoGizp1ulUFQkmkEdC_PA"  # Bot tokeni
+SUPER_ADMIN_ID = 7740552653  # Super admin user ID
+PHONE = "+998931317231"  # Telefon raqami
+API_ID = 36799342  # API ID
+API_HASH = "fcdf748b56fb519c6900d02e25ae2d62"  # API Hash
+SESSION_STRING = "1ApWapzMBu7tofZMURMSzo89mVMr9xLotyNvtPCmERdQUHiz6JYT-4lRg2Q9BIXhZ4vQKg91VtU5AuCcz6mA7Okorwah803VPKW9G_uJ2T6wbhW3_UARwiT0xQO-NmNzhYV3Y65AeH4qAhYPEZ8ytw7FbrEO0r9h4cVB7z2gfUsS6bd7a8xuwNpt5Glwb3VOB-RXFMd1Mhv5EF3pV-rnejmRPGr27VhZml9ATMiCwUJwd4OqAA5ygn-fs8C6HH_UriS6K2T5ASR6ACLXSU8WeGCjBloyJM632L0coc1ik4ZduUxmnX3tQGRo8MCu26-QfwKG6Uqi2_lI6rHcTQYjE-G-DDC3qHcs="
+# =========================================================================================
+
 DB_PATH = "bot_data.db"
-PHONE = os.getenv("PHONE")
-API_ID = int(os.getenv("API_ID"))
-API_HASH = os.getenv("API_HASH")
-
-if not all([TOKEN, SUPER_ADMIN_ID, PHONE, API_ID, API_HASH]):
-    raise ValueError("❌ .env faylda barcha kerakli o'zgaruvchilar to'ldirilmagan!")
-
 userbot_client = None
 bot_app = None
 
@@ -39,28 +35,12 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS keywords (id INTEGER PRIMARY KEY AUTOINCREMENT, admin_id INTEGER NOT NULL, keyword TEXT NOT NULL, created_date TEXT, FOREIGN KEY(admin_id) REFERENCES admins(user_id) ON DELETE CASCADE)''')
     c.execute('''CREATE TABLE IF NOT EXISTS private_groups (id INTEGER PRIMARY KEY AUTOINCREMENT, admin_id INTEGER UNIQUE NOT NULL, group_id INTEGER NOT NULL, added_date TEXT, FOREIGN KEY(admin_id) REFERENCES admins(user_id) ON DELETE CASCADE)''')
     c.execute('''CREATE TABLE IF NOT EXISTS search_groups (id INTEGER PRIMARY KEY AUTOINCREMENT, admin_id INTEGER NOT NULL, group_id INTEGER NOT NULL, group_name TEXT, added_date TEXT, FOREIGN KEY(admin_id) REFERENCES admins(user_id) ON DELETE CASCADE)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS userbot_session (id INTEGER PRIMARY KEY DEFAULT 1, session_string TEXT)''')
     c.execute('CREATE INDEX IF NOT EXISTS idx_keywords_admin ON keywords(admin_id)')
     c.execute('CREATE INDEX IF NOT EXISTS idx_search_groups_admin ON search_groups(admin_id)')
     c.execute('CREATE INDEX IF NOT EXISTS idx_search_groups_group ON search_groups(group_id)')
     conn.commit()
     conn.close()
     logger.info("✅ Database initialized")
-
-def save_session(session_string):
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("INSERT OR REPLACE INTO userbot_session (id, session_string) VALUES (1, ?)", (session_string,))
-    conn.commit()
-    conn.close()
-
-def get_saved_session():
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT session_string FROM userbot_session WHERE id = 1")
-    result = c.fetchone()
-    conn.close()
-    return result['session_string'] if result else None
 
 def is_super_admin(user_id):
     return user_id == SUPER_ADMIN_ID
@@ -209,13 +189,8 @@ def back_button():
 async def init_userbot():
     global userbot_client
     try:
-        saved_session = get_saved_session()
-        userbot_client = TelegramClient(StringSession(saved_session) if saved_session else StringSession(), API_ID, API_HASH)
+        userbot_client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
         await userbot_client.start(phone=PHONE)
-        if not saved_session:
-            session_string = userbot_client.session.save()
-            save_session(session_string)
-            logger.info("✅ Userbot session saqlandi")
         logger.info("✅ Userbot ishga tushdi")
         
         @userbot_client.on(events.NewMessage())
