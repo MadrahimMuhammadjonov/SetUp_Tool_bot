@@ -474,33 +474,31 @@ async def check_group_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             logger.error(f"Xabar yuborishda xato: {e}")
 
 # ==================== MAIN ====================
-async def main():
+async def run_bot():
     global bot_app
-    
     init_db()
-    
     bot_app = Application.builder().token(TOKEN).build()
-    
     bot_app.add_handler(CommandHandler("start", start))
     bot_app.add_handler(CommandHandler("id", get_chat_id))
     bot_app.add_handler(CallbackQueryHandler(button_callback))
     bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, handle_text))
     bot_app.add_handler(MessageHandler(filters.TEXT & filters.ChatType.GROUPS, check_group_message))
-    
     logger.info("🚀 Bot ishga tushmoqda...")
-    
+    await bot_app.initialize()
+    await bot_app.start()
+    await bot_app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+    logger.info("✅ Bot ishga tushdi!")
+
+async def main():
     await init_userbot()
-    
-    logger.info("✅ Bot va Userbot ishga tayyor!")
-    
-    async with bot_app:
-        await bot_app.start()
-        await bot_app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
-        
-        if userbot_client:
-            await userbot_client.run_until_disconnected()
-        else:
-            await asyncio.Event().wait()
+    await run_bot()
+    if userbot_client:
+        await userbot_client.run_until_disconnected()
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Bot to'xtatildi")
+    except Exception as e:
+        logger.error(f"Xato: {e}")
