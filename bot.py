@@ -31,27 +31,33 @@ def get_db():
 def init_db():
     conn = get_db()
     c = conn.cursor()
+
     c.execute('''CREATE TABLE IF NOT EXISTS admins (
         user_id INTEGER PRIMARY KEY,
         username TEXT,
-        added_date TEXT)''')
+        added_date TEXT
+    )''')
 
     c.execute('''CREATE TABLE IF NOT EXISTS keywords (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         admin_id INTEGER NOT NULL,
         keyword TEXT NOT NULL,
         created_date TEXT,
-        FOREIGN KEY(admin_id) REFERENCES admins(user_id) ON DELETE CASCADE)''')
+        FOREIGN KEY(admin_id) REFERENCES admins(user_id) ON DELETE CASCADE
+    )''')
 
-    # group_link qo'shildi (ID yoki link saqlash uchun)
+    # private_groups: endi group_id, group_link, group_name saqlanadi
     c.execute('''CREATE TABLE IF NOT EXISTS private_groups (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         admin_id INTEGER UNIQUE NOT NULL,
         group_id INTEGER,
         group_link TEXT,
+        group_name TEXT,
         added_date TEXT,
-        FOREIGN KEY(admin_id) REFERENCES admins(user_id) ON DELETE CASCADE)''')
+        FOREIGN KEY(admin_id) REFERENCES admins(user_id) ON DELETE CASCADE
+    )''')
 
+    # search_groups: endi group_id, group_link, group_name saqlanadi
     c.execute('''CREATE TABLE IF NOT EXISTS search_groups (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         admin_id INTEGER NOT NULL,
@@ -59,7 +65,8 @@ def init_db():
         group_link TEXT,
         group_name TEXT,
         added_date TEXT,
-        FOREIGN KEY(admin_id) REFERENCES admins(user_id) ON DELETE CASCADE)''')
+        FOREIGN KEY(admin_id) REFERENCES admins(user_id) ON DELETE CASCADE
+    )''')
 
     c.execute('CREATE INDEX IF NOT EXISTS idx_keywords_admin ON keywords(admin_id)')
     c.execute('CREATE INDEX IF NOT EXISTS idx_search_groups_admin ON search_groups(admin_id)')
@@ -139,24 +146,25 @@ def remove_keyword(keyword_id):
     conn.close()
     return True
 
-def add_private_group(admin_id, group_id=None, group_link=None):
+# -------- Private groups (ID yoki link, faqat nom ko‘rsatiladi) --------
+def add_private_group(admin_id, group_id=None, group_link=None, group_name=None):
     conn = get_db()
     c = conn.cursor()
-    c.execute("INSERT OR REPLACE INTO private_groups (admin_id, group_id, group_link, added_date) VALUES (?, ?, ?, ?)",
-              (admin_id, group_id, group_link, datetime.now().isoformat()))
+    c.execute("""INSERT OR REPLACE INTO private_groups
+                 (admin_id, group_id, group_link, group_name, added_date)
+                 VALUES (?, ?, ?, ?, ?)""",
+              (admin_id, group_id, group_link, group_name, datetime.now().isoformat()))
     conn.commit()
     conn.close()
     return True
 
-def get_private_group(admin_id):
+def get_private_group_name(admin_id):
     conn = get_db()
     c = conn.cursor()
-    c.execute("SELECT group_id, group_link FROM private_groups WHERE admin_id = ?", (admin_id,))
+    c.execute("SELECT group_name FROM private_groups WHERE admin_id = ?", (admin_id,))
     result = c.fetchone()
     conn.close()
-    if result:
-        return result['group_id'], result['group_link']
-    return None, None
+    return result['group_name'] if result else None
 
 def remove_private_group(admin_id):
     conn = get_db()
@@ -166,6 +174,7 @@ def remove_private_group(admin_id):
     conn.close()
     return True
 
+# -------- Search groups (ID yoki link, faqat nom ko‘rsatiladi) --------
 def add_search_group(admin_id, group_id=None, group_name=None, group_link=None):
     conn = get_db()
     c = conn.cursor()
@@ -174,7 +183,9 @@ def add_search_group(admin_id, group_id=None, group_name=None, group_link=None):
     if count >= 100:
         conn.close()
         return False
-    c.execute("INSERT INTO search_groups (admin_id, group_id, group_name, group_link, added_date) VALUES (?, ?, ?, ?, ?)",
+    c.execute("""INSERT INTO search_groups
+                 (admin_id, group_id, group_name, group_link, added_date)
+                 VALUES (?, ?, ?, ?, ?)""",
               (admin_id, group_id, group_name, group_link, datetime.now().isoformat()))
     conn.commit()
     conn.close()
@@ -183,8 +194,8 @@ def add_search_group(admin_id, group_id=None, group_name=None, group_link=None):
 def get_search_groups(admin_id):
     conn = get_db()
     c = conn.cursor()
-    c.execute("SELECT id, group_id, group_name, group_link FROM search_groups WHERE admin_id = ?", (admin_id,))
-    groups = [(r['id'], r['group_id'], r['group_name'], r['group_link']) for r in c.fetchall()]
+    c.execute("SELECT id, group_name FROM search_groups WHERE admin_id = ?", (admin_id,))
+    groups = [(r['id'], r['group_name']) for r in c.fetchall()]
     conn.close()
     return groups
 
@@ -196,11 +207,11 @@ def remove_search_group(row_id):
     conn.close()
     return True
 
+# -------- Keyword tekshirish (ID bo‘yicha) --------
 def check_keywords_in_message(group_id, message_text):
     conn = get_db()
     c = conn.cursor()
-    # ID bo‘yicha mos keladigan search_groups larni olamiz
-    c.execute("""SELECT DISTINCT k.admin_id, k.keyword, pg.group_id AS private_group_id, pg.group_link AS private_group_link
+    c.execute("""SELECT DISTINCT k.admin_id, k.keyword, pg.group_id AS private_group_id
                  FROM keywords k
                  JOIN search_groups sg ON k.admin_id = sg.admin_id
                  JOIN private_groups pg ON k.admin_id = pg.admin_id
@@ -214,8 +225,7 @@ def check_keywords_in_message(group_id, message_text):
             matches.append({
                 'admin_id': r['admin_id'],
                 'keyword': r['keyword'],
-                'private_group_id': r['private_group_id'],
-                'private_group_link': r['private_group_link']
+                'private_group_id': r['private_group_id']
             })
     return matches
 
@@ -262,7 +272,6 @@ async def init_userbot():
                 user_id = sender.id
                 username = sender.username or getattr(sender, 'first_name', None) or "Unknown"
                 group_name = getattr(chat, 'title', 'Unknown group')
-
                 matches = check_keywords_in_message(group_id, msg_text)
                 for match in matches:
                     try:
@@ -279,19 +288,8 @@ async def init_userbot():
                                     [[InlineKeyboardButton("👤 Profil", url=f"tg://user?id={user_id}")]]
                                 )
                             )
-                        elif bot_client and match['private_group_link']:
-                            # Agar private_group_id yo‘q bo‘lsa, linkni yuboramiz
-                            bot_client.send_message(
-                                chat_id=SUPER_ADMIN_ID,
-                                text=(f"ℹ️ Private group ID topilmadi, link yuborildi.\n"
-                                      f"Link: {match['private_group_link']}\n\n"
-                                      f"📢 Guruh: {group_name}\n"
-                                      f"👤 Foydalanuvchi: {username}\n"
-                                      f"🔑 Kalit so'z: {match['keyword']}\n\n"
-                                      f"💬 Xabar:\n{msg_text}")
-                            )
                         else:
-                            logger.error("Bot client mavjud emas yoki private group ma'lumotlari yo‘q.")
+                            logger.error("Bot client yoki private_group_id mavjud emas")
                     except Exception as e:
                         logger.error(f"Userbot xabar yuborishda xato: {e}")
             except Exception as e:
@@ -408,17 +406,24 @@ def button_callback(update: Update, context: CallbackContext):
 
     elif data == 'view_private_group':
         admin_id = context.user_data.get('viewing_admin', user_id)
-        gid, glink = get_private_group(admin_id)
-        if gid or glink:
-            text = "📢 Shaxsiy guruh:\n"
-            if gid: text += f"ID: {gid}\n"
-            if glink: text += f"Link: {glink}\n"
-            query.edit_message_text(text, reply_markup=back_button())
+        gname = get_private_group_name(admin_id)
+        if gname:
+            query.edit_message_text(f"📢 Shaxsiy guruh: {gname}", reply_markup=back_button())
         else:
             query.edit_message_text("ℹ️ Shaxsiy guruh yo'q.", reply_markup=back_button())
 
     elif data == 'delete_private_group':
         admin_id = context.user_data.get('viewing_admin', user_id)
+        gname = get_private_group_name(admin_id)
+        if gname:
+            keyboard = [[InlineKeyboardButton(f"🗑 {gname}", callback_data=f'delpr_{admin_id}')]]
+            keyboard.append([InlineKeyboardButton("⬅️ Ortga", callback_data='back_to_main')])
+            query.edit_message_text("🗑 O'chirish uchun shaxsiy guruhni tanlang:", reply_markup=InlineKeyboardMarkup(keyboard))
+        else:
+            query.edit_message_text("ℹ️ Shaxsiy guruh yo'q.", reply_markup=back_button())
+
+    elif data.startswith('delpr_'):
+        admin_id = int(data.split('_')[1])
         remove_private_group(admin_id)
         query.edit_message_text("✅ Shaxsiy guruh o'chirildi!", reply_markup=back_button())
 
@@ -436,11 +441,9 @@ def button_callback(update: Update, context: CallbackContext):
         grps = get_search_groups(admin_id)
         if grps:
             text = "📋 Izlovchi guruhlar:\n\n"
-            for i, (rowid, gid, gname, glink) in enumerate(grps, 1):
-                text += f"{i}. {gname or 'Noma'lum'}\n"
-                if gid: text += f"   ID: {gid}\n"
-                if glink: text += f"   Link: {glink}\n\n"
-            text += f"💾 Jami: {len(grps)}/100 ta"
+            for i, gname in enumerate([g[1] for g in grps], 1):
+                text += f"{i}. {gname}\n"
+            text += f"\n💾 Jami: {len(grps)}/100 ta"
             query.edit_message_text(text, reply_markup=back_button())
         else:
             query.edit_message_text("ℹ️ Izlovchi guruhlar yo'q.", reply_markup=back_button())
@@ -449,9 +452,9 @@ def button_callback(update: Update, context: CallbackContext):
         admin_id = context.user_data.get('viewing_admin', user_id)
         grps = get_search_groups(admin_id)
         if grps:
-            keyboard = [[InlineKeyboardButton(f"🗑 {n or 'Noma'lum'}", callback_data=f'delgrp_{i}')] for i, _, n, _ in grps]
+            keyboard = [[InlineKeyboardButton(f"🗑 {gname}", callback_data=f'delgrp_{rowid}')] for rowid, gname in grps]
             keyboard.append([InlineKeyboardButton("⬅️ Ortga", callback_data='back_to_main')])
-            query.edit_message_text("🗑 O'chirish uchun tanlang:", reply_markup=InlineKeyboardMarkup(keyboard))
+            query.edit_message_text("🗑 O'chirish uchun izlovchi guruhni tanlang:", reply_markup=InlineKeyboardMarkup(keyboard))
         else:
             query.edit_message_text("ℹ️ Izlovchi guruhlar yo'q.", reply_markup=back_button())
 
@@ -502,13 +505,19 @@ def handle_text(update: Update, context: CallbackContext):
     elif waiting == 'private_group':
         admin_id = context.user_data.get('viewing_admin', user_id)
         if text.startswith("http"):
-            add_private_group(admin_id, group_link=text)
-            update.message.reply_text(f"✅ Shaxsiy guruh link qo'shildi: {text}", reply_markup=back_button())
+            # Link yuborilgan — nomni minimal saqlaymiz
+            add_private_group(admin_id, group_link=text, group_name="Link orqali guruh")
+            update.message.reply_text("✅ Shaxsiy guruh qo'shildi: Link orqali guruh", reply_markup=back_button())
         else:
             try:
                 gid = int(text)
-                add_private_group(admin_id, group_id=gid)
-                update.message.reply_text(f"✅ Shaxsiy guruh qo'shildi: {gid}", reply_markup=back_button())
+                try:
+                    chat = context.bot.get_chat(gid)
+                    gname = chat.title or f"Guruh {gid}"
+                except Exception:
+                    gname = f"Guruh {gid}"
+                add_private_group(admin_id, group_id=gid, group_name=gname)
+                update.message.reply_text(f"✅ Shaxsiy guruh qo'shildi: {gname}", reply_markup=back_button())
             except Exception:
                 update.message.reply_text("❌ Noto'g'ri ID yoki link!", reply_markup=back_button())
         context.user_data.pop('waiting', None)
@@ -517,7 +526,7 @@ def handle_text(update: Update, context: CallbackContext):
         admin_id = context.user_data.get('viewing_admin', user_id)
         if text.startswith("http"):
             add_search_group(admin_id, group_link=text, group_name="Link orqali guruh")
-            update.message.reply_text(f"✅ Izlovchi guruh link qo'shildi: {text}", reply_markup=back_button())
+            update.message.reply_text("✅ Izlovchi guruh qo'shildi: Link orqali guruh", reply_markup=back_button())
         else:
             try:
                 gid = int(text)
@@ -558,16 +567,6 @@ def check_group_message(update: Update, context: CallbackContext):
                           f"🔑 Kalit so'z: {match['keyword']}\n\n"
                           f"💬 Xabar:\n{msg_text}"),
                     reply_markup=InlineKeyboardMarkup(keyboard)
-                )
-            elif match['private_group_link']:
-                context.bot.send_message(
-                    chat_id=SUPER_ADMIN_ID,
-                    text=(f"ℹ️ Private group ID topilmadi, link yuborildi.\n"
-                          f"Link: {match['private_group_link']}\n\n"
-                          f"📢 Guruh: {group_name}\n"
-                          f"👤 Foydalanuvchi: {username}\n"
-                          f"🔑 Kalit so'z: {match['keyword']}\n\n"
-                          f"💬 Xabar:\n{msg_text}")
                 )
         except Exception as e:
             logger.error(f"Xabar yuborishda xato: {e}")
